@@ -1,66 +1,101 @@
 import streamlit as st
 import pandas as pd
+import os
+import zipfile
+from io import BytesIO
 
-st.set_page_config(page_title="Validación Vertical de Insumos", layout="centered")
+# 1. CONFIGURACIÓN DE LA PÁGINA
+st.set_page_config(page_title="Sistema de Validación Nacional", layout="centered")
 
+# 2. CARGA DE DATOS
 @st.cache_data
 def load_data():
-    # Cargamos el archivo que nos compartiste
-    return pd.read_excel("cuadro de distribución para oficio con ajustes 31 03 26.xlsx", sheet_name='VAL 30 04 26')
+    # Asegúrate de que el nombre del archivo coincida exactamente con el que subiste a GitHub
+    archivo = "cuadro de distribución para oficio con ajustes 31 03 26.xlsx"
+    return pd.read_excel(archivo, sheet_name='VAL 30 04 26')
 
-df = load_data()
+try:
+    df = load_data()
+except Exception as e:
+    st.error(f"Error al cargar el archivo Excel: {e}")
+    st.stop()
 
+# 3. INTERFAZ DE USUARIO
 st.title("📋 Formulario de Validación de Insumos")
 st.markdown("---")
 
 entidad = st.selectbox("Seleccione su Entidad:", ["-- Seleccione --"] + list(df['Entidad'].unique()))
 
 if entidad != "-- Seleccione --":
-    # 1. Obtener la fila de la entidad y transponerla para que sea vertical
+    # Filtrar datos de la entidad
     fila_entidad = df[df['Entidad'] == entidad].iloc[0]
     
-    # Creamos una lista de diccionarios para armar una tabla vertical
+    # Transformar datos a formato vertical para facilitar la lectura
     datos_verticales = []
-    
-    # Iteramos por las columnas para emparejar Medicamento con su Celda de Validación
-    # Según tu archivo, los medicamentos están en las columnas pares y validaciones en las impares
     columnas = df.columns.tolist()
     
+    # Lógica para emparejar Medicamento con su Celda de Validación
     for i in range(1, len(columnas), 2):
-        nombre_medicamento = columnas[i]
-        nombre_validacion = columnas[i+1]
-        
+        nombre_med = columnas[i]
+        nombre_val = columnas[i+1]
         datos_verticales.append({
-            "Medicamento": nombre_medicamento,
-            "Cantidad Asignada": fila_entidad[nombre_medicamento],
-            "CANTIDAD VALIDADA": fila_entidad[nombre_validacion] if pd.notnull(fila_entidad[nombre_validacion]) else 0
+            "Medicamento": nombre_med,
+            "Cantidad Asignada": fila_entidad[nombre_med],
+            "CANTIDAD VALIDADA": fila_entidad[nombre_val] if pd.notnull(fila_entidad[nombre_val]) else 0
         })
 
     df_vertical = pd.DataFrame(datos_verticales)
 
-    st.info(f"Validando insumos para: **{entidad}**")
+    st.info(f"Usted está validando los insumos para: **{entidad}**")
 
-    # 2. Editor en formato vertical
-    df_editado_vertical = st.data_editor(
+    # Editor de datos vertical
+    df_editado = st.data_editor(
         df_vertical,
         column_config={
             "Medicamento": st.column_config.Column(width="medium", disabled=True),
             "Cantidad Asignada": st.column_config.NumberColumn(disabled=True),
-            "CANTIDAD VALIDADA": st.column_config.NumberColumn(
-                "Cantidad Validada",
-                help="Ingrese la cantidad real recibida",
-                min_value=0,
-                required=True
-            )
+            "CANTIDAD VALIDADA": st.column_config.NumberColumn("Cantidad Real Recibida", min_value=0)
         },
         hide_index=True,
         use_container_width=True
     )
 
-    # 3. Guardado en Parquet
+    # Botón de Guardado para los Estados
     if st.button("Enviar Validación Final"):
         nombre_archivo = f"validado_{entidad.replace(' ', '_')}.parquet"
-        # Guardamos el formato vertical (más fácil de procesar después)
-        df_editado_vertical['Entidad'] = entidad
-        df_editado_vertical.to_parquet(nombre_archivo)
-        st.success(f"✅ La validación de {entidad} se ha guardado correctamente.")
+        df_editado['Entidad_Validante'] = entidad
+        df_editado.to_parquet(nombre_archivo)
+        st.success(f"✅ Validación de {entidad} guardada exitosamente en el servidor.")
+
+# 4. PANEL DE ADMINISTRACIÓN (BARRA LATERAL)
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔐 Acceso Administrativo")
+
+if st.sidebar.checkbox("Modo Administrador"):
+    clave = st.sidebar.text_input("Contraseña:", type="password")
+    
+    if clave == "VIRIDIANA":
+        st.sidebar.success("Acceso Autorizado")
+        
+        # Buscar archivos parquet generados
+        archivos = [f for f in os.listdir('.') if f.endswith('.parquet')]
+        
+        if archivos:
+            st.sidebar.write(f"Validaciones recibidas: {len(archivos)}")
+            
+            # Crear ZIP para descarga
+            buf = BytesIO()
+            with zipfile.ZipFile(buf, "w") as z:
+                for f in archivos:
+                    z.write(f)
+            
+            st.sidebar.download_button(
+                label="📥 Descargar todas las validaciones (.zip)",
+                data=buf.getvalue(),
+                file_name="consolidado_nacional.zip",
+                mime="application/zip"
+            )
+        else:
+            st.sidebar.warning("Aún no hay datos enviados por los estados.")
+    elif clave != "VIRIDIANA":
+        st.sidebar.error("Clave incorrecta")
