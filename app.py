@@ -1,5 +1,22 @@
+
 import streamlit as st
 import pandas as pd
+
+# --- INTERRUPTOR DE SEGURIDAD ---
+# Cambia a True para bloquear la página, cambia a False para abrirla
+mantenimiento = True 
+
+st.set_page_config(page_title="Sistema de Validación", layout="centered")
+
+if mantenimiento:
+    st.error("### 🚫 El periodo de validación ha finalizado")
+    st.info("""
+        El sistema se encuentra actualmente en proceso de consolidación de datos. 
+        Si usted es un representante estatal y no logró subir su información, 
+        por favor contacte al administrador nacional.
+    """)
+    st.image("https://cdn-icons-png.flaticon.com/512/564/564619.png", width=100)
+    st.stop() # Esto impide que cargue el Excel y el formulario
 import os
 import zipfile
 from io import BytesIO
