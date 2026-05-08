@@ -1,18 +1,44 @@
-
 import streamlit as st
 import pandas as pd
-
 import os
 import zipfile
+import yagmail
 from io import BytesIO
 
 # 1. CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(page_title="Sistema de Validación Nacional", layout="centered")
 
+# --- FUNCIÓN PARA ENVIAR CORREO ---
+def enviar_correo(archivo_adjunto, entidad):
+    try:
+        # Configuración de cuentas
+        usuario_envio = "g.aisawork@gmail.com"  # Tu cuenta de las capturas
+        destinatario = "g.aisawork@gmail.com"   # Puedes enviártelo a ti mismo o a otro
+        
+        # Obtener la contraseña desde los Secrets de Streamlit
+        password_envio = st.secrets["ueyh gaqo homm bykp"] 
+
+        # Inicializar el cliente de correo
+        yag = yagmail.SMTP(usuario_envio, password_envio)
+        
+        asunto = f"✅ Nueva Validación: {entidad}"
+        cuerpo = f"Se ha recibido la validación de insumos de la entidad: {entidad}.\nSe adjunta el archivo Parquet generado."
+        
+        yag.send(
+            to=destinatario,
+            subject=asunto,
+            contents=cuerpo,
+            attachments=archivo_adjunto
+        )
+        return True
+    except Exception as e:
+        st.error(f"Error técnico al enviar correo: {e}")
+        return False
+
 # 2. CARGA DE DATOS
 @st.cache_data
 def load_data():
-    # Asegúrate de que el nombre del archivo coincida exactamente con el que subiste a GitHub
+    # Nombre exacto de tu archivo en GitHub
     archivo = "cuadro de distribución para oficio con ajustes 31 03 26.xlsx"
     return pd.read_excel(archivo, sheet_name='VAL 30 04 26')
 
@@ -32,11 +58,10 @@ if entidad != "-- Seleccione --":
     # Filtrar datos de la entidad
     fila_entidad = df[df['Entidad'] == entidad].iloc[0]
     
-    # Transformar datos a formato vertical para facilitar la lectura
+    # Reestructurar datos para el editor
     datos_verticales = []
     columnas = df.columns.tolist()
     
-    # Lógica para emparejar Medicamento con su Celda de Validación
     for i in range(1, len(columnas), 2):
         nombre_med = columnas[i]
         nombre_val = columnas[i+1]
@@ -50,7 +75,7 @@ if entidad != "-- Seleccione --":
 
     st.info(f"Usted está validando los insumos para: **{entidad}**")
 
-    # Editor de datos vertical
+    # Editor de datos
     df_editado = st.data_editor(
         df_vertical,
         column_config={
@@ -62,12 +87,23 @@ if entidad != "-- Seleccione --":
         use_container_width=True
     )
 
-    # Botón de Guardado para los Estados
+    # Botón de envío
     if st.button("Enviar Validación Final"):
         nombre_archivo = f"validado_{entidad.replace(' ', '_')}.parquet"
         df_editado['Entidad_Validante'] = entidad
+        
+        # Guardar archivo temporalmente en el servidor
         df_editado.to_parquet(nombre_archivo)
-        st.success(f"✅ Validación de {entidad} guardada exitosamente en el servidor.")
+        
+        # Enviar por correo
+        with st.spinner("Procesando y enviando respaldo por correo..."):
+            exito = enviar_correo(nombre_archivo, entidad)
+            
+            if exito:
+                st.success(f"✅ ¡Éxito! La validación de {entidad} ha sido enviada y respaldada.")
+                st.balloons()
+            else:
+                st.warning("⚠️ Los datos se guardaron en el servidor, pero hubo un problema con el envío del correo.")
 
 # 4. PANEL DE ADMINISTRACIÓN (BARRA LATERAL)
 st.sidebar.markdown("---")
@@ -79,25 +115,24 @@ if st.sidebar.checkbox("Modo Administrador"):
     if clave == "VIRIDIANA":
         st.sidebar.success("Acceso Autorizado")
         
-        # Buscar archivos parquet generados
+        # Buscar archivos parquet que aún existan en el servidor
         archivos = [f for f in os.listdir('.') if f.endswith('.parquet')]
         
         if archivos:
-            st.sidebar.write(f"Validaciones recibidas: {len(archivos)}")
+            st.sidebar.write(f"Archivos temporales: {len(archivos)}")
             
-            # Crear ZIP para descarga
             buf = BytesIO()
             with zipfile.ZipFile(buf, "w") as z:
                 for f in archivos:
                     z.write(f)
             
             st.sidebar.download_button(
-                label="📥 Descargar todas las validaciones (.zip)",
+                label="📥 Descargar respaldo local (.zip)",
                 data=buf.getvalue(),
                 file_name="consolidado_nacional.zip",
                 mime="application/zip"
             )
         else:
-            st.sidebar.warning("Aún no hay datos enviados por los estados.")
-    elif clave != "VIRIDIANA":
+            st.sidebar.info("No hay archivos temporales en el servidor. Revise su correo para ver los respaldos permanentes.")
+    elif clave != "":
         st.sidebar.error("Clave incorrecta")
