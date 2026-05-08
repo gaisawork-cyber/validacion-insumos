@@ -16,7 +16,7 @@ def enviar_correo(archivo_adjunto, entidad):
         destinatario = "g.aisawork@gmail.com"   # Puedes enviártelo a ti mismo o a otro
         
         # Obtener la contraseña desde los Secrets de Streamlit
-        password_envio = st.secrets["ueyh gaqo homm bykp"] 
+        password_envio = st.secrets["EMAIL_PASSWORD"]
 
         # Inicializar el cliente de correo
         yag = yagmail.SMTP(usuario_envio, password_envio)
